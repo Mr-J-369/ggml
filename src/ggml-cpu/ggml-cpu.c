@@ -212,6 +212,22 @@ typedef pthread_t ggml_thread_t;
 #include <TargetConditionals.h>
 #endif
 
+// TEMP-DIAG: CPU vec_dot for F8_E4M3 is missing upstream (null entry
+// crashes any host F8 matmul). Dequantize-then-dot, correct but slow.
+// REMOVE after host reference work concludes.
+void dequantize_row_f8_e4m3(const uint8_t * GGML_RESTRICT x, float * GGML_RESTRICT y, int64_t k);
+static void ggml_vec_dot_f8_e4m3_f32(int n, float * GGML_RESTRICT s, size_t bs, const void * GGML_RESTRICT x, size_t bx, const void * GGML_RESTRICT y, size_t by, int nrc) {
+    static _Thread_local float f8_dot_tmp[16384];
+    assert(n <= 16384);
+    for (int i = 0; i < nrc; ++i) {
+        float * si = (float *) ((char *) s + i * bs);
+        const uint8_t * xi = (const uint8_t *) x + i * bx;
+        const float * yi = (const float *) ((const char *) y + i * by);
+        dequantize_row_f8_e4m3(xi, f8_dot_tmp, n);
+        ggml_vec_dot_f32(n, si, sizeof(float), f8_dot_tmp, sizeof(float), yi, sizeof(float), 1);
+    }
+}
+
 static const struct ggml_type_traits_cpu type_traits_cpu[GGML_TYPE_COUNT] = {
     [GGML_TYPE_F32] = {
         .from_float               = (ggml_from_float_t) ggml_cpu_fp32_to_fp32,
@@ -294,6 +310,12 @@ static const struct ggml_type_traits_cpu type_traits_cpu[GGML_TYPE_COUNT] = {
         .from_float               = quantize_row_nvfp4,
         .vec_dot                  = ggml_vec_dot_nvfp4_q8_0,
         .vec_dot_type             = GGML_TYPE_Q8_0,
+        .nrows                    = 1,
+    },
+    [GGML_TYPE_F8_E4M3] = {
+        .from_float               = NULL,
+        .vec_dot                  = (ggml_vec_dot_t) ggml_vec_dot_f8_e4m3_f32,
+        .vec_dot_type             = GGML_TYPE_F32,
         .nrows                    = 1,
     },
     [GGML_TYPE_Q2_K] = {

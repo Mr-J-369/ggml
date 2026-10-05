@@ -3688,7 +3688,9 @@ static int hmx_mm_op_matmul(struct htp_ops_context * octx, const struct htp_mm_k
         k = hex_align_up(k, HTP_MM_HMX_TILE_N_COLS);
         n = hex_align_up(n, HTP_MM_HMX_TILE_N_COLS);
     }
-    const int m_total    = (int) src1->ne[1];
+    const int m_total    = (kparams->kernel_type == HTP_MM_KERNEL_HMX_2D && (src0->ne[2] * src0->ne[3] == 1))
+        ? (int)(src1->ne[1] * src1->ne[2] * src1->ne[3])
+        : (int)src1->ne[1];
     const int act_stride = (int)(src1->nb[1] / sizeof(float));
     const int wgt_stride = (int)(src0->nb[1] / sizeof(__fp16));
 
