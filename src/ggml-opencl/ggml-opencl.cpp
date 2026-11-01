@@ -35,6 +35,7 @@ typedef const void * (*get_adreno_bin_kernel_func_t)(
 
 #include <inttypes.h>
 #include <string.h>
+#include <dlfcn.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -12523,9 +12524,12 @@ static ggml_backend_buffer_t ggml_backend_opencl_buffer_type_alloc_buffer(ggml_b
     // that do not export the symbol, so a build targeting them fails to link. The large
     // buffer extension is only ever enabled on drivers that are well past 3.0, so this path
     // is dead there anyway.
-    if (err != CL_SUCCESS && backend_ctx->adreno_use_large_buffer) {
+    static const auto create_buffer_with_properties =
+        reinterpret_cast<decltype(&clCreateBufferWithProperties)>(
+            dlsym(RTLD_DEFAULT, "clCreateBufferWithProperties"));
+    if (err != CL_SUCCESS && backend_ctx->adreno_use_large_buffer && create_buffer_with_properties) {
         cl_mem_properties props[] = { 0x41A6 /* CL_LARGE_BUFFER_QCOM */, 1, 0 };
-        mem = clCreateBufferWithProperties(backend_ctx->context, props, CL_MEM_READ_WRITE, size, NULL, &err);
+        mem = create_buffer_with_properties(backend_ctx->context, props, CL_MEM_READ_WRITE, size, NULL, &err);
     }
 #endif
     if (err != CL_SUCCESS) {
