@@ -318,23 +318,13 @@ static inline bool dma_queue_push(dma_queue *q, dma_ptr dptr, size_t dst_stride,
         return dma_queue_push_single_1d(q, dptr, total);
     }
 
-    // Stride overflow - fall back to row-by-row.
-    {
-        const uint8_t *src = (const uint8_t *) dptr.src;
-        uint8_t       *dst = (uint8_t *)       dptr.dst;
-        size_t r = 0;
-        while (r + 1 < nrows) {
-            dma_ptr p = dma_make_ptr(dst + r * dst_stride, src + r * src_stride);
-            if (!dma_queue_push_single_1d(q, p, row_size)) {
-                dma_queue_flush(q);
-            } else {
-                r++;
-            }
-        }
-        dma_queue_flush(q);
-        dma_ptr p = dma_make_ptr(dst + r * dst_stride, src + r * src_stride);
-        return dma_queue_push_single_1d(q, p, row_size);
+    // Stride overflow - copy rows directly, then queue one already-completed entry so the caller's pop returns dptr.
+    const uint8_t *src = (const uint8_t *) dptr.src;
+    uint8_t       *dst = (uint8_t *)       dptr.dst;
+    for (size_t row = 0; row < nrows; row++) {
+        memcpy(dst + row * dst_stride, src + row * src_stride, row_size);
     }
+    return dma_queue_push_single_1d(q, dptr, 0);
 }
 
 #else // HVX_ARCH >= 75

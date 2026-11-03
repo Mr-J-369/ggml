@@ -88,6 +88,7 @@ static ggml_hexagon_device_config opt_device_configs[GGML_HEXAGON_MAX_SESSIONS];
 static int    opt_arch    = 0; // autodetect
 static size_t opt_ndev    = 1;
 static size_t opt_nhvx    = 0; // use all
+static int    opt_power   = 0; // DSP clock vote: 0 = max, 1 = turbo, 2 = nominal
 static int    opt_nhmx    = 1; // when set, enable HMX; when 0, use HVX only
 static size_t opt_vmem    = HTP_OP_MAX_VMEM_DEFAULT;  // max available va space for buffer mappings
 static size_t opt_mbuf    = 1ul * 1024 * 1024 * 1024; // max buffer size
@@ -2578,7 +2579,14 @@ struct ggml_hexagon_opbatch {
         if (last_node.opcode != HTP_OP_MUL_MAT && last_node.opcode != HTP_OP_MUL_MAT_SEGMENTED) {
             return false;
         }
-        if (last_node.inputs.empty() || last_node.inputs[0]->type != GGML_TYPE_F8_E4M3) {
+        if (last_node.inputs.empty()) {
+            return false;
+        }
+        const auto wtype = ggml_hexagon_hmx_weight_storage_type(last_node.inputs[0]->type);
+        auto * kparams = (struct htp_mm_kernel_params *) last_node.kernel_params;
+        if (wtype != GGML_TYPE_F8_E4M3 &&
+            (wtype != GGML_TYPE_F16 || node.opcode != HTP_OP_SCALE ||
+             kparams->kernel_type != HTP_MM_KERNEL_HMX_2D)) {
             return false;
         }
 
@@ -2588,7 +2596,6 @@ struct ggml_hexagon_opbatch {
         }
 
         const ggml_tensor * scale = nullptr;
-        auto * kparams = (struct htp_mm_kernel_params *) last_node.kernel_params;
         if (node.opcode == HTP_OP_SCALE) {
             if (node.src0() != mm_out || (kparams->scale_flags & HTP_MM_SCALE_PARAM)) {
                 return false;
@@ -3913,7 +3920,7 @@ void ggml_hexagon_session::allocate(const ggml_hexagon_device_config & config) n
     this->op_batch = new ggml_hexagon_opbatch(this, opt_opbatch, this->max_vmem);
 
     // Start dspqueue/opbatch processing
-    err = htp_iface_start(this->handle, this->session_id, this->queue_id, this->n_threads, opt_nhmx, this->max_vmem);
+    err = htp_iface_start(this->handle, this->session_id, this->queue_id, this->n_threads, opt_nhmx, this->max_vmem, (uint32_t) opt_power);
     if (err != 0) {
         GGML_LOG_ERROR("ggml-hex: %s failed to start session: 0x%08x\n", this->c_name(), (unsigned) err);
         throw std::runtime_error("ggml-hex: iface start failed (see log for details)");
@@ -7901,6 +7908,7 @@ static void ggml_hexagon_init(ggml_backend_reg * reg) {
     const char * str_etm      = getenv("GGML_HEXAGON_ETM");
     const char * str_nhvx     = getenv("GGML_HEXAGON_NHVX");
     const char * str_nhmx     = getenv("GGML_HEXAGON_NHMX");
+    const char * str_power    = getenv("GGML_HEXAGON_POWER");
     const char * str_mm_select = getenv("GGML_HEXAGON_MM_SELECT");
     const char * str_fa_select = getenv("GGML_HEXAGON_FA_SELECT");
     const char * str_ar_select = getenv("GGML_HEXAGON_AR_SELECT");
@@ -7951,6 +7959,7 @@ static void ggml_hexagon_init(ggml_backend_reg * reg) {
     opt_etm       = str_etm      ? atoi(str_etm)                          : 0;
     opt_nhvx      = str_nhvx     ? strtoul(str_nhvx, NULL, 0)             : opt_nhvx;
     opt_nhmx      = str_nhmx     ? atoi(str_nhmx)                         : opt_nhmx;
+    opt_power     = str_power    ? atoi(str_power)                        : opt_power;
     opt_mm_select = str_mm_select ? atoi(str_mm_select)                   : opt_mm_select;
     opt_fa_select = str_fa_select ? atoi(str_fa_select)                   : opt_fa_select;
     opt_ar_select = str_ar_select ? atoi(str_ar_select)                   : opt_ar_select;

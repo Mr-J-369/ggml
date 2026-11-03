@@ -319,7 +319,7 @@ static void htp_main_thread(void * context);
 static void htp_packet_callback(dspqueue_t queue, int error, void * context);
 static void htp_error_callback(dspqueue_t queue, int error, void * context);
 
-AEEResult htp_iface_start(remote_handle64 handle, uint32_t sess_id, uint64_t dsp_queue_id, uint32_t n_hvx, uint32_t n_hmx, uint64_t max_vmem) {
+AEEResult htp_iface_start(remote_handle64 handle, uint32_t sess_id, uint64_t dsp_queue_id, uint32_t n_hvx, uint32_t n_hmx, uint64_t max_vmem, uint32_t power) {
     struct htp_handle * h = (struct htp_handle *) handle;
     if (!h) {
         return AEE_EBADPARM;
@@ -450,6 +450,9 @@ AEEResult htp_iface_start(remote_handle64 handle, uint32_t sess_id, uint64_t dsp
         }
     }
 
+    // power: 0 = max, 1 = turbo, 2 = nominal voltage corners
+    const HAP_dcvs_voltage_corner_t dcvs_corner = power == 0 ? HAP_DCVS_VCORNER_MAX : power == 1 ? HAP_DCVS_VCORNER_TURBO : HAP_DCVS_VCORNER_NOM;
+
     // DCVS setup
     {
         HAP_power_request_t request;
@@ -459,13 +462,13 @@ AEEResult htp_iface_start(remote_handle64 handle, uint32_t sess_id, uint64_t dsp
         request.dcvs_v3.set_dcvs_enable           = TRUE;
         request.dcvs_v3.dcvs_enable               = FALSE;
         request.dcvs_v3.set_bus_params            = TRUE;
-        request.dcvs_v3.bus_params.min_corner     = HAP_DCVS_VCORNER_MAX;
-        request.dcvs_v3.bus_params.max_corner     = HAP_DCVS_VCORNER_MAX;
-        request.dcvs_v3.bus_params.target_corner  = HAP_DCVS_VCORNER_MAX;
+        request.dcvs_v3.bus_params.min_corner     = dcvs_corner;
+        request.dcvs_v3.bus_params.max_corner     = dcvs_corner;
+        request.dcvs_v3.bus_params.target_corner  = dcvs_corner;
         request.dcvs_v3.set_core_params           = TRUE;
-        request.dcvs_v3.core_params.min_corner    = HAP_DCVS_VCORNER_MAX;
-        request.dcvs_v3.core_params.max_corner    = HAP_DCVS_VCORNER_MAX;
-        request.dcvs_v3.core_params.target_corner = HAP_DCVS_VCORNER_MAX;
+        request.dcvs_v3.core_params.min_corner    = dcvs_corner;
+        request.dcvs_v3.core_params.max_corner    = dcvs_corner;
+        request.dcvs_v3.core_params.target_corner = dcvs_corner;
         request.dcvs_v3.set_sleep_disable         = TRUE;
         request.dcvs_v3.sleep_disable             = TRUE;
 
@@ -487,6 +490,7 @@ AEEResult htp_iface_start(remote_handle64 handle, uint32_t sess_id, uint64_t dsp
     }
 
 #if __HVX_ARCH__ >= 75
+    const HAP_dcvs_exp_voltage_corner_t hmx_corner = power == 0 ? HAP_DCVS_EXP_VCORNER_MAX : power == 1 ? HAP_DCVS_EXP_VCORNER_TUR : HAP_DCVS_EXP_VCORNER_NOM;
     {
         // Power on HMX and set HMX clock
         HAP_power_request_t request;
@@ -495,9 +499,9 @@ AEEResult htp_iface_start(remote_handle64 handle, uint32_t sess_id, uint64_t dsp
         request.hmx_v2.set_power     = TRUE;
         request.hmx_v2.power_up      = TRUE;
         request.hmx_v2.set_clock     = TRUE;
-        request.hmx_v2.target_corner = HAP_DCVS_EXP_VCORNER_MAX;
-        request.hmx_v2.min_corner    = HAP_DCVS_EXP_VCORNER_MAX;
-        request.hmx_v2.max_corner    = HAP_DCVS_EXP_VCORNER_MAX;
+        request.hmx_v2.target_corner = hmx_corner;
+        request.hmx_v2.min_corner    = hmx_corner;
+        request.hmx_v2.max_corner    = hmx_corner;
         request.hmx_v2.perf_mode     = HAP_CLK_PERF_HIGH;
         FARF(ALWAYS, "Setting HMX clock\n");
         err = HAP_power_set((void *) ctx, &request);
