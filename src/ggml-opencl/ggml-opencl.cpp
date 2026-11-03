@@ -6493,6 +6493,9 @@ static ggml_backend_opencl_context * ggml_cl_init(ggml_backend_dev_t dev) {
     backend_ctx->driver_version = driver_version;
 
     backend_ctx->adreno_cl_compiler_version = get_adreno_cl_compiler_version(driver_version);
+    GGML_LOG_INFO("[OpenCL Driver Diag] Driver Version: '%s', Adreno Compiler type=%d version=%d.%d\n",
+                  driver_version, (int)backend_ctx->adreno_cl_compiler_version.type,
+                  backend_ctx->adreno_cl_compiler_version.major, backend_ctx->adreno_cl_compiler_version.minor);
     backend_ctx->has_vector_subgroup_broadcast =
         (backend_ctx->adreno_cl_compiler_version.type == E031 && backend_ctx->adreno_cl_compiler_version.major >= 47) ||
         (backend_ctx->adreno_cl_compiler_version.type == DX   && backend_ctx->adreno_cl_compiler_version.major >= 17);
