@@ -1291,6 +1291,17 @@ void ggml_backend_sched_split_graph(ggml_backend_sched_t sched, struct ggml_cgra
         for (int b = 0; b < sched->n_backends && *cur_backend_id == -1; b++) {
             ggml_backend_sched_set_if_supported(sched, node, b, cur_backend_id);
         }
+        if (*cur_backend_id == -1) {
+            GGML_LOG_ERROR("ggml-backend: node '%s' (op=%d %s, type=%d, dims=[%lld,%lld,%lld,%lld]) unsupported by all %d backends:\n",
+                           node->name, (int)node->op, ggml_op_name(node->op), (int)node->type,
+                           (long long)node->ne[0], (long long)node->ne[1], (long long)node->ne[2], (long long)node->ne[3],
+                           sched->n_backends);
+            for (int b = 0; b < sched->n_backends; b++) {
+                GGML_LOG_ERROR("  backend %d (%s): supports_op=%d\n",
+                               b, ggml_backend_name(sched->backends[b]),
+                               ggml_backend_supports_op(sched->backends[b], node));
+            }
+        }
         GGML_ASSERT(*cur_backend_id != -1);
     }
 
@@ -1630,8 +1641,8 @@ static bool ggml_backend_sched_alloc_splits(ggml_backend_sched_t sched) {
             ggml_backend_synchronize(sched->backends[i]);
         }
 
-        ggml_gallocr_reserve_n(sched->galloc, &sched->graph, sched->node_backend_ids, sched->leaf_backend_ids);
-        if (!ggml_gallocr_alloc_graph(sched->galloc, &sched->graph)) {
+        if (!ggml_gallocr_reserve_n(sched->galloc, &sched->graph, sched->node_backend_ids, sched->leaf_backend_ids) ||
+            !ggml_gallocr_alloc_graph(sched->galloc, &sched->graph)) {
             GGML_LOG_ERROR("%s: failed to allocate graph\n", __func__);
             return false;
         }

@@ -248,23 +248,17 @@ static inline __attribute__((always_inline)) void group_norm_accumulate_f16(stru
         const HVX_Vector x1 = Q6_V_hi_W(p0);
         const HVX_Vector x2 = Q6_V_lo_W(p1);
         const HVX_Vector x3 = Q6_V_hi_W(p1);
-        acc->sum[0] = hvx_vec_add_f32_f32(acc->sum[0], x0);
-        acc->sum[1] = hvx_vec_add_f32_f32(acc->sum[1], x1);
-        acc->sum[2] = hvx_vec_add_f32_f32(acc->sum[2], x2);
-        acc->sum[3] = hvx_vec_add_f32_f32(acc->sum[3], x3);
-        acc->square[0] = hvx_vec_add_f32_f32(acc->square[0], hvx_vec_mul_f32_f32(x0, x0));
-        acc->square[1] = hvx_vec_add_f32_f32(acc->square[1], hvx_vec_mul_f32_f32(x1, x1));
-        acc->square[2] = hvx_vec_add_f32_f32(acc->square[2], hvx_vec_mul_f32_f32(x2, x2));
-        acc->square[3] = hvx_vec_add_f32_f32(acc->square[3], hvx_vec_mul_f32_f32(x3, x3));
+        group_norm_accumulate_vector(acc, 0, x0);
+        group_norm_accumulate_vector(acc, 1, x1);
+        group_norm_accumulate_vector(acc, 2, x2);
+        group_norm_accumulate_vector(acc, 3, x3);
     }
     if (i < nvec) {
         const HVX_VectorPair p = hvx_vec_f16_to_f32(hvx_vmemu(src + (size_t) i * 64u));
         const HVX_Vector x0 = Q6_V_lo_W(p);
         const HVX_Vector x1 = Q6_V_hi_W(p);
-        acc->sum[0] = hvx_vec_add_f32_f32(acc->sum[0], x0);
-        acc->sum[1] = hvx_vec_add_f32_f32(acc->sum[1], x1);
-        acc->square[0] = hvx_vec_add_f32_f32(acc->square[0], hvx_vec_mul_f32_f32(x0, x0));
-        acc->square[1] = hvx_vec_add_f32_f32(acc->square[1], hvx_vec_mul_f32_f32(x1, x1));
+        group_norm_accumulate_vector(acc, 0, x0);
+        group_norm_accumulate_vector(acc, 1, x1);
     }
 
     const uint32_t tail = n % 64u;
@@ -274,10 +268,8 @@ static inline __attribute__((always_inline)) void group_norm_accumulate_f16(stru
         const HVX_VectorPair p = hvx_vec_f16_to_f32(x);
         const HVX_Vector x0 = Q6_V_lo_W(p);
         const HVX_Vector x1 = Q6_V_hi_W(p);
-        acc->sum[0] = hvx_vec_add_f32_f32(acc->sum[0], x0);
-        acc->sum[1] = hvx_vec_add_f32_f32(acc->sum[1], x1);
-        acc->square[0] = hvx_vec_add_f32_f32(acc->square[0], hvx_vec_mul_f32_f32(x0, x0));
-        acc->square[1] = hvx_vec_add_f32_f32(acc->square[1], hvx_vec_mul_f32_f32(x1, x1));
+        group_norm_accumulate_vector(acc, 0, x0);
+        group_norm_accumulate_vector(acc, 1, x1);
     }
 }
 

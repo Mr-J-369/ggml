@@ -998,7 +998,7 @@ static bool ggml_gallocr_node_needs_realloc(ggml_gallocr_t galloc, struct ggml_t
     size_t node_size = 0;
     if (!node->data && !node->view_src) {
         // If we previously had data but don't now then reallocate
-        if (talloc->buffer_id < 0) {
+        if (talloc->buffer_id < 0 || galloc->buffers[talloc->buffer_id] == NULL) {
             return false;
         }
         node_size = ggml_backend_buft_get_alloc_size(galloc->bufts[talloc->buffer_id], node);

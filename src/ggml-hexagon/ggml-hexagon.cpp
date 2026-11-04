@@ -5791,6 +5791,12 @@ static bool ggml_hexagon_precompute_conv2d_params(
             }
         }
     }
+    if (!found) {
+        struct htp_conv2d_kernel_params test_cand;
+        uint32_t test_vtcm = build_layout(&test_cand, 1, HTP_CONV2D_TILE_W, 1);
+        GGML_LOG_ERROR("ggml-hex: select_layout failed for all n_tiles (1..%u)! total_ow=%u padded_ow=%u oh=%u ic=%u oc=%u elem_sz=%u nth=%u vtcm_req_1x1=%u sess_vtcm=%llu\n",
+                       total_n_tiles, ow, padded_ow, oh, ic, oc, input_element_size, sess->n_threads, test_vtcm, (unsigned long long)sess->vtcm_size);
+    }
     if (found) {
         if (op->op == GGML_OP_CONV_2D_UPSCALE) {
             kparams->flags |= HTP_CONV2D_UPSCALE2;
@@ -5819,15 +5825,23 @@ static bool ggml_hexagon_supported_conv2d(const struct ggml_hexagon_session * se
         (src->type != GGML_TYPE_F32 && src->type != GGML_TYPE_F16) ||
         (op->type != GGML_TYPE_F32 && op->type != GGML_TYPE_F16) ||
         (src->type == GGML_TYPE_F16 && op->type != GGML_TYPE_F16)) {
+        GGML_LOG_ERROR("ggml-hex: conv2d rejected by type/hmx check: n_hmx=%u w_type=%d src_type=%d op_type=%d\n",
+                       sess->n_hmx, weight ? (int)weight->type : -1, src ? (int)src->type : -1, (int)op->type);
         return false;
     }
     if (!ggml_is_contiguous(weight) || !ggml_is_contiguous(src) || !ggml_is_contiguous(op) ||
         src->ne[3] != 1 || op->ne[3] != 1) {
+        GGML_LOG_ERROR("ggml-hex: conv2d rejected by contiguous/batch check: w_cont=%d src_cont=%d op_cont=%d src_ne3=%lld op_ne3=%lld\n",
+                       ggml_is_contiguous(weight), ggml_is_contiguous(src), ggml_is_contiguous(op),
+                       (long long)src->ne[3], (long long)op->ne[3]);
         return false;
     }
     if ((op->op == GGML_OP_CONV_2D_BIAS && !bias) ||
         (bias && (bias->type != GGML_TYPE_F32 || !ggml_is_contiguous(bias) ||
                   ggml_nelements(bias) != weight->ne[3]))) {
+        GGML_LOG_ERROR("ggml-hex: conv2d rejected by bias check: has_bias=%d bias_type=%d bias_cont=%d bias_nelem=%lld w_ne3=%lld\n",
+                       bias != nullptr, bias ? (int)bias->type : -1, bias ? ggml_is_contiguous(bias) : 0,
+                       bias ? (long long)ggml_nelements(bias) : 0, (long long)weight->ne[3]);
         return false;
     }
 
@@ -5853,6 +5867,15 @@ static bool ggml_hexagon_supported_conv2d(const struct ggml_hexagon_session * se
         src->ne[2] != ic || op->ne[2] != oc ||
         op->ne[0] != src->ne[0] * upscale ||
         op->ne[1] != src->ne[1] * upscale) {
+        if (ggml_hexagon_is_conv2d_hmx_weight(weight)) {
+            GGML_LOG_ERROR("ggml-hex: HMX-repacked conv2d weight rejected by shape/stride check: kw=%lld kh=%lld s=[%d,%d] p=[%d,%d] d=[%d,%d] up=%d ic=%lld oc=%lld src_ne=[%lld,%lld,%lld,%lld] op_ne=[%lld,%lld,%lld,%lld]\n",
+                           (long long)kw, (long long)kh, s0, s1, p0, p1, d0, d1, upscale, (long long)ic, (long long)oc,
+                           (long long)src->ne[0], (long long)src->ne[1], (long long)src->ne[2], (long long)src->ne[3],
+                           (long long)op->ne[0], (long long)op->ne[1], (long long)op->ne[2], (long long)op->ne[3]);
+        } else {
+            HEX_VERBOSE("ggml-hex: conv2d rejected by shape/stride check: kw=%lld kh=%lld s=[%d,%d] p=[%d,%d] d=[%d,%d] up=%d ic=%lld oc=%lld\n",
+                        (long long)kw, (long long)kh, s0, s1, p0, p1, d0, d1, upscale, (long long)ic, (long long)oc);
+        }
         return false;
     }
     if (residual &&
@@ -5864,11 +5887,16 @@ static bool ggml_hexagon_supported_conv2d(const struct ggml_hexagon_session * se
          !((residual_factor_t == 2 &&
             (residual->ne[3] == oc || residual->ne[3] == 2 * oc)) ||
            (residual_factor_t == 1 && residual->ne[3] == 2 * oc)))) {
+        GGML_LOG_ERROR("ggml-hex: conv2d rejected by residual check\n");
         return false;
     }
 
     struct htp_conv2d_kernel_params kparams;
     if (!ggml_hexagon_precompute_conv2d_params(sess, op, &kparams)) {
+        GGML_LOG_ERROR("ggml-hex: conv2d rejected by precompute_conv2d_params: kw=%lld kh=%lld ic=%lld oc=%lld src_ne=[%lld,%lld,%lld,%lld] op_type=%d src_type=%d vtcm_size=%llu\n",
+                       (long long)kw, (long long)kh, (long long)ic, (long long)oc,
+                       (long long)src->ne[0], (long long)src->ne[1], (long long)src->ne[2], (long long)src->ne[3],
+                       (int)op->type, (int)src->type, (unsigned long long)sess->vtcm_size);
         return false;
     }
 
