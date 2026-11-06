@@ -51,6 +51,7 @@ typedef const void * (*get_adreno_bin_kernel_func_t)(
 #include <memory>
 #include <charconv>
 #include <mutex>
+#include <atomic>
 #include <regex>
 #include <set>
 #include <unordered_set>
@@ -480,6 +481,7 @@ struct ggml_backend_opencl_device_context {
     std::regex *opfilter = nullptr; // regex of ops to not claim
     std::string opfilter_str = ""; // regex string for opfilter
     size_t global_mem_size = 0;
+    std::atomic<size_t> allocated_bytes{0};
 };
 
 // Lazily-compiled flash-attention kernels and their per-(dk,dv) tile metadata.
@@ -9617,6 +9619,8 @@ struct ggml_backend_opencl_buffer_context {
 };
 
 static void ggml_backend_opencl_buffer_free_buffer(ggml_backend_buffer_t buffer) {
+    ggml_backend_opencl_device_context * dev_ctx = (ggml_backend_opencl_device_context *) buffer->buft->device->context;
+    dev_ctx->allocated_bytes.fetch_sub(buffer->size, std::memory_order_relaxed);
     ggml_backend_opencl_buffer_context * ctx = (ggml_backend_opencl_buffer_context *) buffer->context;
     delete ctx;
 }
@@ -12664,6 +12668,9 @@ static ggml_backend_buffer_t ggml_backend_opencl_buffer_type_alloc_buffer(ggml_b
 
     ggml_backend_opencl_buffer_context * ctx = new ggml_backend_opencl_buffer_context(mem);
 
+    ggml_backend_opencl_device_context * dev_ctx = (ggml_backend_opencl_device_context *) buffer_type->device->context;
+    dev_ctx->allocated_bytes.fetch_add(size, std::memory_order_relaxed);
+
     return ggml_backend_buffer_init(buffer_type, ggml_backend_opencl_buffer_interface, ctx, size);
 }
 
@@ -12735,10 +12742,12 @@ static void ggml_backend_opencl_device_get_memory(ggml_backend_dev_t dev, size_t
     static const size_t opencl_extra_margin = 1024ull*1024ull*1024ull;
 
     // OpenCL does not provide reliable currently-free device memory.
-    // Use total/global memory as a best-effort upper bound.
+    // Use total/global memory minus live buffer allocations as a best-effort upper bound.
     // Improved safety: Reduce by a 1GiB extra margin for common --fit
     *total = dev_ctx->global_mem_size;
-    *free  = *total > opencl_extra_margin ? *total - opencl_extra_margin : 0;
+    const size_t usable = *total > opencl_extra_margin ? *total - opencl_extra_margin : 0;
+    const size_t allocated = dev_ctx->allocated_bytes.load(std::memory_order_relaxed);
+    *free = usable > allocated ? usable - allocated : 0;
 }
 
 static enum ggml_backend_dev_type ggml_backend_opencl_device_get_type(ggml_backend_dev_t dev) {
